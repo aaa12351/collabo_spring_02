@@ -118,6 +118,9 @@ public class ProductController {
 
                 // 이미지가 의미 있는 문자열로 되어 있고, Base64 인코딩 형식이면 이미지 이름을 변경합니다.
                 if(updatedProduct.getImage() != null && updatedProduct.getImage().startsWith("data:image") ){
+                    // 1. 기존 이미지 파일을 우선 삭제합니다.
+                    deleteOldImage(savedProduct.getImage());
+
                     String imageFileName = saveProductImage(updatedProduct.getImage());
                     savedProduct.setImage(imageFileName);
                 }
@@ -135,6 +138,23 @@ public class ProductController {
         }
     }
 
+    // 이전 이미지 파일을 삭제하는 메소드
+    private void deleteOldImage(String oldImageFileName) {
+        if (oldImageFileName == null || oldImageFileName.isBlank()) {
+            return;
+        }
+        String pathName = getProductImagePath();
+
+        File oldImageFile = new File(pathName + oldImageFileName);
+
+        if (oldImageFile.exists()) {
+            boolean deleted = oldImageFile.delete();
+            if (!deleted) {
+                System.err.println("⚠ 기존 이미지 삭제 실패 : " + oldImageFileName);
+            }
+        }
+    }
+
     // Base64 인코딩 문자열을 변환하여 이미지로 만들고, 저장해주는 메소드입니다.
     private String saveProductImage(String base64Image) {
         // 데이터 베이스와 이미지 경로에 저장될 이미지의 이름
@@ -142,12 +162,7 @@ public class ProductController {
 
         // String 클래스 공부 : endsWith(), split() 메소드
 
-        // 폴더 구분자가 제대로 설정 되어 있으면 그대로 사용합니다.
-        // 그렇지 않으면, 폴더 구분자를 붙여 줍니다.
-        // File.separator : 폴더 구분자를 의미하며, 리눅스는 /, 윈도우는 \입니다.
-        String pathName = productImageLocation.endsWith("\\") || productImageLocation.endsWith("/")
-                ? productImageLocation
-                : productImageLocation + File.separator;
+        String pathName = getProductImagePath();
 
         File imageFile = new File(pathName + imageFileName) ;
 
@@ -165,5 +180,14 @@ public class ProductController {
             err.printStackTrace();
             return base64Image ;
         }
+    }
+    // 이미지 경로를 반환하는 메서드
+    private String getProductImagePath() {
+        // 폴더 구분자가 제대로 설정 되어 있으면 그대로 사용합니다.
+        // 그렇지 않으면, 폴더 구분자를 붙여 줍니다.
+        // File.separator : 폴더 구분자를 의미하며, 리눅스는 /, 윈도우는 \입니다.
+        return productImageLocation.endsWith("\\") || productImageLocation.endsWith("/")
+                ? productImageLocation
+                : productImageLocation + File.separator;
     }
 }
