@@ -1,5 +1,6 @@
 package com.coffee.controller;
 
+import com.coffee.constant.OrderStatus;
 import com.coffee.constant.Role;
 import com.coffee.dto.OrderDto;
 import com.coffee.dto.OrderItemDto;
@@ -40,7 +41,7 @@ public class OrderController {
         if(!optionalMember.isPresent()){
             throw new RuntimeException("회원이 존재하지 않습니다.");
         }
-        Member member = optionalMember.get();
+        Member member = optionalMember.get() ;
 
         // 혹시 마일리지 적립 시스템이면, 마일리지 적립은 여기서 하세요.
 
@@ -54,7 +55,7 @@ public class OrderController {
         List<OrderProduct> orderProductList = new ArrayList<>();
 
         for(OrderItemDto item : dto.getOrderItems()){
-            // item은 주문하고자 하는 주문 상품 1개를 의미합니다.
+            // item는 주문하고자 하는 `주문 상품` 1개를 의미합니다.
             Optional<Product> optionalProduct = productService.findProductById(item.getProductId());
 
             if(!optionalProduct.isPresent()){
@@ -71,10 +72,10 @@ public class OrderController {
             orderProduct.setProduct(product);
             orderProduct.setQuantity(item.getQuantity());
 
-            // 리스트 컬렉션에 각 '주문 상품'을 담아 줍니다.
+            // 리스트 컬렉션에 각 `주문 상품`을 담아 줍니다.
             orderProductList.add(orderProduct);
 
-            // 상품의 재고 수량 뺴기
+            // 상품의 재고 수량 빼기
             product.setStock(product.getStock() - item.getQuantity());
 
             // 카트에 담겨 있던 품목을 삭제해 줘야 합니다.
@@ -94,7 +95,7 @@ public class OrderController {
         // 주문 객체를 저장합니다.
         orderService.saveOrder(order);
 
-        String message = "주문이 완료 되었습니다." ;
+        String message = "주문이 완료 되었습니다.";
         return ResponseEntity.ok(message) ;
     }
 
@@ -102,20 +103,19 @@ public class OrderController {
     // http://localhost:9000/order/list?memberId=회원아이디
     @GetMapping("/list") // 리액트의 OrderList.js 파일 내의 useEffect 참조
     public ResponseEntity<List<OrderResponseDto>> getOrderList(@RequestParam Long memberId, @RequestParam Role role){
-        System.out.println("로그인 한 사람의 id :" + memberId);
+        System.out.println("로그인 한 사람의 id : " + memberId );
         System.out.println("로그인 한 사람 역할 : " + role);
 
         List<Order> orders = null ;
 
         if(role == Role.ADMIN){ // 관리자이면 모든 주문 내역을 조회하기
-            // System.out.println("관리자");
-            orders = orderService.findAllOrders() ;
+            //System.out.println("관리자");
+            orders = orderService.findAllOrders(OrderStatus.PENDING) ;
 
         }else{ // 일반인인 경우에는 자기 주문 정보만 조회하기
-            // System.out.println("일반인");
-            orders = orderService.findByMemberId(memberId) ;
+            //System.out.println("일반인");
+            orders = orderService.findByMemberId(memberId, OrderStatus.PENDING);
         }
-
 
         System.out.println("주문 건수 : " + orders.size());
 
@@ -131,7 +131,7 @@ public class OrderController {
             // `주문 상품` 여러개에 대한 셋팅
             List<OrderResponseDto.OrderItem> orderItems = new ArrayList<>();
 
-            for(OrderProduct op : bean.getOrderProducts()){
+            for(OrderProduct op : bean.getOrderProducts() ){
                 OrderResponseDto.OrderItem item
                         = new OrderResponseDto.OrderItem(op.getProduct().getName(), op.getQuantity());
 
@@ -139,7 +139,7 @@ public class OrderController {
             }
             dto.setOrderItems(orderItems);
 
-            responseDtos.add(dto) ;
+            responseDtos.add(dto);
         }
 
         return ResponseEntity.ok(responseDtos) ;
@@ -149,5 +149,50 @@ public class OrderController {
     public String ddd(@PathVariable Long orderId){
         System.out.println("수정할 항목 : " + orderId);
         return null ;
+    }
+
+    @PutMapping("/update/status/{orderId}")
+    public ResponseEntity<String> statusChange(@PathVariable Long orderId, @RequestParam OrderStatus status){
+        System.out.println("수정할 항목의 아이디 : " + orderId);
+        System.out.println("변경하고자 하는 주문 상태 : " + status);
+
+        int affected = -1 ; //
+        affected = orderService.updateOrderStatus(orderId, status) ;
+        System.out.println("데이터 베이스에 반영이 된 행 개수 : " + affected);
+
+        String message = "송장 번호 " + orderId + "의 주문 상태가 변경이 되었습니다.";
+        return ResponseEntity.ok(message);
+    }
+
+    // `관리자` 또는 `당사자`가 주문에 대한 삭제 요청을 하였습니다.
+    @DeleteMapping("/delete/{orderId}")
+    public ResponseEntity<String> cancelOrder(@PathVariable Long orderId){
+        if(!orderService.existsById(orderId)){
+            return ResponseEntity.notFound().build();
+        }
+
+        // 여기서부터 재고 수량 증가를 위한 코드입니다.
+        Optional<Order> orderOptional = orderService.findOrderById(orderId) ;
+        if(orderOptional.isEmpty()){
+            return ResponseEntity.notFound().build();
+        }
+
+        Order order = orderOptional.get() ;
+
+        // `주문 상품`을 반복하면서 재고 수량을 더해 줍니다.
+        for(OrderProduct op : order.getOrderProducts()){
+            Product product = op.getProduct() ;
+            int quantity = op.getQuantity() ;
+
+            // 기존 재고에 주문 취소된 수량을 다시 더해 줍니다.
+            product.setStock(product.getStock() + quantity);
+
+            productService.save(product); // 데이터 베이스에 수정함
+        }
+
+        orderService.deleteById(orderId);
+
+        String message = "주문이 취소 되었습니다.";
+        return ResponseEntity.ok(message);
     }
 }
